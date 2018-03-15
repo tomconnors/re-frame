@@ -2,7 +2,8 @@
   (:require
     [todomvc.db    :refer [default-db todos->local-store]]
     [re-frame.core :refer [reg-event-db reg-event-fx inject-cofx path after]]
-    [cljs.spec.alpha :as s]))
+    [cljs.spec.alpha :as s]
+    [debux.cs.core :refer-macros [fn-traced]]))
 
 
 ;; -- Interceptors --------------------------------------------------------------
@@ -192,21 +193,21 @@
 (reg-event-db
   :save
   todo-interceptors
-  (fn [todos [_ id title]]
+  (fn-traced [todos [_ id title]]
     (assoc-in todos [id :title] title)))
 
 
 (reg-event-db
   :delete-todo
   todo-interceptors
-  (fn [todos [_ id]]
+  (fn-traced [todos [_ id]]
     (dissoc todos id)))
 
 
 (reg-event-db
   :clear-completed
   todo-interceptors
-  (fn [todos _]
+  (fn-traced [todos _]
     (let [done-ids (->> (vals todos)         ;; which todos have a :done of true
                         (filter :done)
                         (map :id))]
@@ -216,7 +217,7 @@
 (reg-event-db
   :complete-all-toggle
   todo-interceptors
-  (fn [todos _]
+  (fn-traced [todos _]
     (let [new-done (not-every? :done (vals todos))]   ;; work out: toggle true or false?
       (reduce #(assoc-in %1 [%2 :done] new-done)
               todos
