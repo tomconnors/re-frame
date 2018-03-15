@@ -116,7 +116,7 @@
    check-spec-interceptor]          ;; after event handler runs, check app-db for correctness. Does it still match Spec?
 
   ;; the event handler (function) being registered
-  (fn [{:keys [db local-store-todos]} _]                  ;; take 2 values from coeffects. Ignore event vector itself.
+  (fn-traced [{:keys [db local-store-todos]} _]                  ;; take 2 values from coeffects. Ignore event vector itself.
     {:db (assoc default-db :todos local-store-todos)}))   ;; all hail the new state to be put in app-db
 
 
@@ -130,7 +130,7 @@
   [check-spec-interceptor]       ;; after event handler runs, check app-db for correctness. Does it still match Spec?
 
   ;; handler
-  (fn [db [_ new-filter-kw]]     ;; new-filter-kw is one of :all, :active or :done
+  (fn-traced [db [_ new-filter-kw]]     ;; new-filter-kw is one of :all, :active or :done
     (assoc db :showing new-filter-kw)))
 
 ;; NOTE: below is a rewrite of the event handler (above) using a `path` Interceptor
@@ -178,7 +178,7 @@
   ;; And, further, it means the event handler returns just the value to be
   ;; put into the `[:todos]` path, and not the entire `db`.
   ;; So, againt, a path interceptor acts like clojure's `update-in`
-  (fn [todos [_ text]]
+  (fn-traced [todos [_ text]]
     (let [id (allocate-next-id todos)]
       (assoc todos id {:id id :title text :done false}))))
 
@@ -186,7 +186,7 @@
 (reg-event-db
   :toggle-done
   todo-interceptors
-  (fn [todos [_ id]]
+  (fn-traced [todos [_ id]]
     (update-in todos [id :done] not)))
 
 
