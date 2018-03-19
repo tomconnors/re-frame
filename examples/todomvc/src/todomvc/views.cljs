@@ -101,6 +101,11 @@
   []
   [:div
    [:section#todoapp
+    [:button {:on-click #(dispatch [:code/test1])} "Test 1"]
+    [:button {:on-click #(dispatch [:code/test2])} "Test 2"]
+    [:button {:on-click #(dispatch [:code/test3])} "Test 3"]
+    [:button {:on-click #(dispatch [:code/test4])} "Test 4"]
+    [:button {:on-click #(dispatch [:code/test5])} "Test 5"]
     [task-entry]
     (when (seq @(subscribe [:todos]))
       [task-list])

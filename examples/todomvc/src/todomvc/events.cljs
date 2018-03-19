@@ -222,3 +222,49 @@
       (reduce #(assoc-in %1 [%2 :done] new-done)
               todos
               (keys todos)))))
+
+(reg-event-db
+  :code/test1
+  (fn-traced [db _]
+    (let [k (keys db)]
+      (map #(count (str %)) k)
+      db)))
+
+(reg-event-db
+  :code/test2
+  (fn-traced [db _]
+    (let [res (-> [1 2 3 4 5]
+                  (->> (map (fn [val] (condp = val
+                                        3 33
+                                        100 100
+                                        5 55
+                                        val))))
+                  vec)]
+      (assoc res 1 -1)
+      db)))
+
+(reg-event-db
+  :code/test3
+  (fn-traced [db _]
+    (assoc {:todos/system 1 :todos/visible 2}
+      :todos/list (map #(inc %) (range 50)))))
+
+(reg-event-db
+  :code/test4
+  [(path :test4)]
+  (fn-traced [db _]
+    (into []
+          (comp
+            (map inc)
+            (filter odd?))
+          (range 10))))
+
+(reg-event-db
+  :code/test5
+  [(path :test5)]
+  (fn-traced [db _]
+    (cond-> 1          ; we start with 1
+            true inc       ; the condition is true so (inc 1) => 2
+            false (* 42)   ; the condition is false so the operation is skipped
+            (= 2 2) (* 3)) ; (= 2 2) is true so (* 2 3) => 6
+            ))
