@@ -12,7 +12,7 @@
 
   :hooks [leiningen.cljsbuild]
 
-  :profiles {:dev  {:dependencies [[day8.re-frame/re-frame-10x "0.2.1-SNAPSHOT"]
+  :profiles {:dev  {:dependencies [[day8.re-frame/re-frame-10x "0.2.2-SNAPSHOT"]
                                    [day8.re-frame/debux "0.5.0-SNAPSHOT"]]
                     :cljsbuild    {:builds {:client {:compiler {:asset-path           "js"
                                                                 :optimizations        :none
@@ -35,6 +35,6 @@
 
   :clean-targets ^{:protect false} ["resources/public/js" "target"]
 
-  :cljsbuild {:builds {:client {:source-paths ["src" "../../src" "checkouts/re-frame-trace/src"]
+  :cljsbuild {:builds {:client {:source-paths ["src" "../../src" "checkouts/re-frame-10x/src"]
                                 :compiler     {:output-dir "resources/public/js"
                                                :output-to  "resources/public/js/client.js"}}}})
