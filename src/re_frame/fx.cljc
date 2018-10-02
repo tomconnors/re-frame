@@ -5,17 +5,16 @@
     [re-frame.interceptor :refer [->interceptor]]
     [re-frame.interop     :refer [set-timeout!]]
     [re-frame.events      :as events]
-    [re-frame.registrar   :refer [get-handler clear-handlers register-handler]]
+    ;; [re-frame.registrar   :refer [get-handler clear-handlers register-handler]]
     [re-frame.loggers     :refer [console]]
     [re-frame.trace :as trace :include-macros true]))
 
 
 ;; -- Registration ------------------------------------------------------------
 
-(def kind :fx)
-(assert (re-frame.registrar/kinds kind))
+;; (def kind :fx)
 
-(defn reg-fx
+#_(defn reg-fx
   "Register the given effect `handler` for the given `id`.
 
   `id` is keyword, often namespaced.
@@ -71,10 +70,10 @@
              [context]
              (trace/with-trace
                {:op-type :event/do-fx}
-               (doseq [[effect-key effect-value] (:effects context)]
-                 (if-let [effect-fn (get-handler kind effect-key false)]
+               (doseq [[effect-fn effect-value] (:effects context)]
+                 (if effect-fn
                    (effect-fn effect-value)
-                   (console :error "re-frame: no handler registered for effect:" effect-key ". Ignoring.")))))))
+                   (console :error "effect must not be nil. Ignoring.")))))))
 
 ;; -- Builtin Effect Handlers  ------------------------------------------------
 
@@ -93,13 +92,13 @@
 ;;    {:dispatch-later [ (when (> 3 5) {:ms 200 :dispatch [:conditioned-out]})
 ;;                       {:ms 100 :dispatch [:another-one]}]}
 ;;
-(reg-fx
-  :dispatch-later
-  (fn [value]
-    (doseq [{:keys [ms dispatch] :as effect} (remove nil? value)]
-        (if (or (empty? dispatch) (not (number? ms)))
-          (console :error "re-frame: ignoring bad :dispatch-later value:" effect)
-          (set-timeout! #(router/dispatch dispatch) ms)))))
+(defn dispatch-later [value]
+  (doseq [{:keys [ms dispatch] :as effect} (remove nil? value)]
+    (if (or (empty? dispatch) (not (number? ms)))
+      (console :error "re-frame: ignoring bad :dispatch-later value:" effect)
+      (set-timeout! #(router/dispatch dispatch) ms))))
+
+
 
 
 ;; :dispatch
@@ -109,12 +108,10 @@
 ;; usage:
 ;;   {:dispatch [:event-id "param"] }
 
-(reg-fx
-  :dispatch
-  (fn [value]
-    (if-not (vector? value)
-      (console :error "re-frame: ignoring bad :dispatch value. Expected a vector, but got:" value)
-      (router/dispatch value))))
+(defn dispatch [value]
+  (if-not (vector? value)
+    (console :error "re-frame: ignoring bad :dispatch value. Expected a vector, but got:" value)
+    (router/dispatch value)))
 
 
 ;; :dispatch-n
@@ -130,12 +127,10 @@
 ;;    {:dispatch-n (list (when (> 3 5) [:conditioned-out])
 ;;                       [:another-one])}
 ;;
-(reg-fx
-  :dispatch-n
-  (fn [value]
-    (if-not (sequential? value)
-      (console :error "re-frame: ignoring bad :dispatch-n value. Expected a collection, got got:" value)
-      (doseq [event (remove nil? value)] (router/dispatch event)))))
+(defn dispatch-n [value]
+  (if-not (sequential? value)
+    (console :error "re-frame: ignoring bad :dispatch-n value. Expected a collection, got got:" value)
+    (doseq [event (remove nil? value)] (router/dispatch event))))
 
 
 ;; :deregister-event-handler
@@ -148,13 +143,12 @@
 ;; or:
 ;;   {:deregister-event-handler [:one-id :another-id]}
 ;;
-(reg-fx
-  :deregister-event-handler
-  (fn [value]
-    (let [clear-event (partial clear-handlers events/kind)]
-      (if (sequential? value)
-        (doseq [event value] (clear-event event))
-        (clear-event value)))))
+;; No longer needed
+#_(defn deregister-event-handler [value]
+  (let [clear-event (partial clear-handlers events/kind)]
+    (if (sequential? value)
+      (doseq [event value] (clear-event event))
+      (clear-event value))))
 
 
 ;; :db
@@ -164,9 +158,7 @@
 ;; usage:
 ;;   {:db  {:key1 value1 key2 value2}}
 ;;
-(reg-fx
-  :db
-  (fn [value]
-    (if-not (identical? @app-db value)
-      (reset! app-db value))))
+(defn db [value]
+  (if-not (identical? @app-db value)
+    (reset! app-db value)))
 

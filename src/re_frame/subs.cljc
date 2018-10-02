@@ -4,11 +4,7 @@
    [re-frame.interop   :refer [add-on-dispose! debug-enabled? make-reaction ratom? deref? dispose! reagent-id]]
    [re-frame.loggers   :refer [console]]
    [re-frame.utils     :refer [first-in-vector]]
-   [re-frame.registrar :refer [get-handler clear-handlers register-handler]]
    [re-frame.trace     :as trace :include-macros true]))
-
-(def kind :sub)
-(assert (re-frame.registrar/kinds kind))
 
 ;; -- cache -------------------------------------------------------------------
 ;;
@@ -32,12 +28,6 @@
     (dispose! rxn))
   (if (not-empty @query->reaction)
     (console :warn "Subscription cache should be empty after clearing it.")))
-
-(defn clear-all-handlers!
-  "Unregisters all existing subscription handlers"
-  []
-  (clear-handlers kind)
-  (clear-subscription-cache!))
 
 (defn cache-and-return
   "cache the reaction r"
@@ -124,12 +114,11 @@
                                      :reaction (reagent-id cached)}})
          cached)
 
-       (let [query-id   (first-in-vector query)
-             handler-fn (get-handler kind query-id)]
+       (let [handler-fn   (first-in-vector query)]
          (trace/merge-trace! {:tags {:cached? false}})
          (if (nil? handler-fn)
            (do (trace/merge-trace! {:error true})
-               (console :error (str "re-frame: no subscription handler registered for: " query-id ". Returning a nil subscription.")))
+               (console :error (str "re-frame: subscription handler must not be nil. Returning a nil subscription.")))
            (cache-and-return query [] (handler-fn app-db query)))))))
 
   ([query dynv]
@@ -142,15 +131,14 @@
          (trace/merge-trace! {:tags {:cached?  true
                                      :reaction (reagent-id cached)}})
          cached)
-       (let [query-id   (first-in-vector query)
-             handler-fn (get-handler kind query-id)]
+       (let [handler-fn (first-in-vector query)]
          (trace/merge-trace! {:tags {:cached? false}})
          (when debug-enabled?
            (when-let [not-reactive (not-empty (remove ratom? dynv))]
              (console :warn "re-frame: your subscription's dynamic parameters that don't implement IReactiveAtom:" not-reactive)))
          (if (nil? handler-fn)
            (do (trace/merge-trace! {:error true})
-               (console :error (str "re-frame: no subscription handler registered for: " query-id ". Returning a nil subscription.")))
+               (console :error (str "re-frame: subscription handler must not be nil. Returning a nil subscription.")))
            (let [dyn-vals (make-reaction (fn [] (mapv deref dynv)))
                  sub      (make-reaction (fn [] (handler-fn app-db query @dyn-vals)))]
              ;; handler-fn returns a reaction which is then wrapped in the sub reaction
@@ -197,7 +185,7 @@
     dereffed-signals))
 
 
-(defn reg-sub
+(defn make-subscription-fn
   "For a given `query-id`, register a `computation` function and input `signals`.
 
   At an abstract level, a call to this function allows you to register 'the mechanism'
@@ -317,38 +305,35 @@
                            (fn inp-fn
                              ([_] (map subscribe vecs))
                              ([_ _] (map subscribe vecs)))))]
-    (register-handler
-      kind
-      query-id
-      (fn subs-handler-fn
-        ([db query-vec]
-         (let [subscriptions (inputs-fn query-vec)
-               reaction-id   (atom nil)
-               reaction      (make-reaction
-                               (fn []
-                                 (trace/with-trace {:operation (first-in-vector query-vec)
-                                                    :op-type   :sub/run
-                                                    :tags      {:query-v    query-vec
-                                                                :reaction   @reaction-id}}
-                                                   (let [subscription (computation-fn (deref-input-signals subscriptions query-id) query-vec)]
-                                                     (trace/merge-trace! {:tags {:value subscription}})
-                                                     subscription))))]
+    (fn subs-handler-fn
+      ([db query-vec]
+       (let [subscriptions (inputs-fn query-vec)
+             reaction-id   (atom nil)
+             reaction      (make-reaction
+                            (fn []
+                              (trace/with-trace {:operation (first-in-vector query-vec)
+                                                 :op-type   :sub/run
+                                                 :tags      {:query-v    query-vec
+                                                             :reaction   @reaction-id}}
+                                (let [subscription (computation-fn (deref-input-signals subscriptions query-id) query-vec)]
+                                  (trace/merge-trace! {:tags {:value subscription}})
+                                  subscription))))]
 
-           (reset! reaction-id (reagent-id reaction))
-           reaction))
-        ([db query-vec dyn-vec]
-         (let [subscriptions (inputs-fn query-vec dyn-vec)
-               reaction-id   (atom nil)
-               reaction      (make-reaction
-                               (fn []
-                                 (trace/with-trace {:operation (first-in-vector query-vec)
-                                                    :op-type   :sub/run
-                                                    :tags      {:query-v   query-vec
-                                                                :dyn-v     dyn-vec
-                                                                :reaction  @reaction-id}}
-                                                   (let [subscription (computation-fn (deref-input-signals subscriptions query-id) query-vec dyn-vec)]
-                                                     (trace/merge-trace! {:tags {:value subscription}})
-                                                     subscription))))]
+         (reset! reaction-id (reagent-id reaction))
+         reaction))
+      ([db query-vec dyn-vec]
+       (let [subscriptions (inputs-fn query-vec dyn-vec)
+             reaction-id   (atom nil)
+             reaction      (make-reaction
+                            (fn []
+                              (trace/with-trace {:operation (first-in-vector query-vec)
+                                                 :op-type   :sub/run
+                                                 :tags      {:query-v   query-vec
+                                                             :dyn-v     dyn-vec
+                                                             :reaction  @reaction-id}}
+                                (let [subscription (computation-fn (deref-input-signals subscriptions query-id) query-vec dyn-vec)]
+                                  (trace/merge-trace! {:tags {:value subscription}})
+                                  subscription))))]
 
-           (reset! reaction-id (reagent-id reaction))
-           reaction))))))
+         (reset! reaction-id (reagent-id reaction))
+         reaction)))))

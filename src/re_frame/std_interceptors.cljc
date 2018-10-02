@@ -3,8 +3,9 @@
   (:require
     [re-frame.interceptor :refer [->interceptor get-effect get-coeffect assoc-coeffect assoc-effect]]
     [re-frame.loggers :refer [console]]
-    [re-frame.registrar :as registrar]
+    ;; [re-frame.registrar :as registrar]
     [re-frame.db :refer [app-db]]
+    [re-frame.fx]
     [clojure.data :as data]
     [re-frame.cofx :as cofx]
     [re-frame.utils :as utils]
@@ -113,7 +114,7 @@
                        :operation (get-in context [:coeffects :event])}
                       (let [{:keys [db event]} (:coeffects context)]
                         (->> (handler-fn db event)
-                             (assoc-effect context :db))))]
+                             (assoc-effect context re-frame.fx/db))))]
                 ;; We merge these tags outside of the :event/handler trace because we want them to be assigned to the parent
                 ;; wrapping trace.
                 (trace/merge-trace!

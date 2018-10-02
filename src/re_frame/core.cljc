@@ -1,5 +1,6 @@
 (ns re-frame.core
   (:require
+    [clojure.string            :as string]
     [re-frame.events           :as events]
     [re-frame.subs             :as subs]
     [re-frame.interop          :as interop]
@@ -8,7 +9,7 @@
     [re-frame.cofx             :as cofx]
     [re-frame.router           :as router]
     [re-frame.loggers          :as loggers]
-    [re-frame.registrar        :as registrar]
+    ;; [re-frame.registrar        :as registrar]
     [re-frame.interceptor      :as interceptor]
     [re-frame.std-interceptors :as std-interceptors :refer [db-handler->interceptor
                                                              fx-handler->interceptor
@@ -42,13 +43,51 @@
 
 
 ;; -- subscriptions -----------------------------------------------------------
-(def reg-sub        subs/reg-sub)
+#_(def reg-sub        subs/reg-sub)
+(def make-subscription-fn subs/make-subscription-fn)
 (def subscribe      subs/subscribe)
 
-(def clear-sub (partial registrar/clear-handlers subs/kind))  ;; think unreg-sub
+(defn get-def-sub-args [args]
+  (let [[docstring args] (if (string? (first args))
+                           [(first args) (rest args)]
+                           [nil args])
+        [signals arg-list body] (loop [signals []
+                                       [arg & args] args]
+                                  (if arg
+                                    (if (vector? arg)
+                                      [signals arg args]
+                                      (if (= arg :<-)
+                                        (recur (conj signals arg (first args))
+                                               (rest args))
+                                        (recur (conj signals arg)
+                                               args)))
+                                    [signals nil nil]))]
+    {:docstring docstring
+     :signals signals
+     :arg-list arg-list
+     :body body}))
+
+(defmacro def-sub [var-name & args]
+  (let [{:keys [docstring signals arg-list body]} (get-def-sub-args args)
+        impl-fn-name (symbol (str (name var-name) "--impl"))
+        impl-fn-docs (str "Implementation of pure portion of `"
+                          (name var-name)
+                          "` subscription function."
+                          (if (and (string? docstring) (not (string/blank? docstring)))
+                            (str "  " (name var-name) "'s docstring:"
+                                 (string/join
+                                  "\n"
+                                  (map (fn [s] (str "  " s))
+                                       (string/split docstring #"\n"))))))]
+    `(do
+       (defn ~impl-fn-name ~impl-fn-docs ~arg-list ~@body)
+       (def ~var-name ~docstring (make-subscription-fn ~@signals ~impl-fn-name)))))
+
+;; (def clear-sub (partial registrar/clear-handlers subs/kind))  ;; think unreg-sub
 (def clear-subscription-cache! subs/clear-subscription-cache!)
 
-(defn reg-sub-raw
+;; No longer needed - this would just return `handler-fn`
+#_(defn reg-sub-raw
   "This is a low level, advanced function.  You should probably be
   using reg-sub instead.
   Docs in https://github.com/Day8/re-frame/blob/master/docs/SubscriptionFlow.md"
@@ -57,18 +96,21 @@
 
 
 ;; -- effects -----------------------------------------------------------------
-(def reg-fx      fx/reg-fx)
-(def clear-fx    (partial registrar/clear-handlers fx/kind))  ;; think unreg-fx
+;; No longer needed
+;; (def reg-fx      fx/reg-fx)
+;; (def clear-fx    (partial registrar/clear-handlers fx/kind))  ;; think unreg-fx
 
 ;; -- coeffects ---------------------------------------------------------------
-(def reg-cofx    cofx/reg-cofx)
+;; (def reg-cofx    cofx/reg-cofx) ;; no longer needed
 (def inject-cofx cofx/inject-cofx)
-(def clear-cofx (partial registrar/clear-handlers cofx/kind)) ;; think unreg-cofx
+
+;; No longer needed
+;; (def clear-cofx (partial registrar/clear-handlers cofx/kind)) ;; think unreg-cofx
 
 
 ;; -- Events ------------------------------------------------------------------
 
-(defn reg-event-db
+#_(defn reg-event-db
   "Register the given event `handler` (function) for the given `id`. Optionally, provide
   an `interceptors` chain.
   `id` is typically a namespaced keyword  (but can be anything)
@@ -83,8 +125,37 @@
   ([id interceptors handler]
    (events/register id [cofx/inject-db fx/do-fx interceptors (db-handler->interceptor handler)])))
 
+(defn make-event-db
+  "Register the given event `handler` (function) for the given `id`. Optionally, provide
+  an `interceptors` chain.
+  `id` is typically a namespaced keyword  (but can be anything)
+  `handler` is a function: (db event) -> db
+  `interceptors` is a collection of interceptors. Will be flattened and nils removed.
+  `handler` is wrapped in its own interceptor and added to the end of the interceptor
+   chain, so that, in the end, only a chain is registered.
+   Special effects and coeffects interceptors are added to the front of this
+   chain."
+  ([handler]
+   (make-event-db nil handler))
+  ([interceptors handler]
+   (events/make [cofx/inject-db fx/do-fx interceptors (db-handler->interceptor handler)])))
 
-(defn reg-event-fx
+(defmacro def-event-db [var-name docstring interceptors arg-list & body]
+  (let [impl-fn-name (symbol (str (name var-name) "--impl"))
+        impl-fn-docs (str "Implementation of db-updating portion of `"
+                          (name var-name)
+                          "` event handler/interceptor chain."
+                          (if (and (string? docstring) (not (string/blank? docstring)))
+                            (str "\n  " (name var-name) "'s docstring:\n"
+                                 (string/join
+                                  "\n"
+                                  (map (fn [s] (str "  " s))
+                                       (string/split docstring #"\n"))))))]
+    `(do
+       (defn ~impl-fn-name ~impl-fn-docs ~arg-list ~@body)
+       (def ~var-name ~docstring (make-event-db ~interceptors ~impl-fn-name)))))
+
+#_(defn reg-event-fx
   "Register the given event `handler` (function) for the given `id`. Optionally, provide
   an `interceptors` chain.
   `id` is typically a namespaced keyword  (but can be anything)
@@ -100,8 +171,39 @@
   ([id interceptors handler]
    (events/register id [cofx/inject-db fx/do-fx interceptors (fx-handler->interceptor handler)])))
 
+(defn make-event-fx
+  "Register the given event `handler` (function) for the given `id`. Optionally, provide
+  an `interceptors` chain.
+  `id` is typically a namespaced keyword  (but can be anything)
+  `handler` is a function: (coeffects-map event-vector) -> effects-map
+  `interceptors` is a collection of interceptors. Will be flattened and nils removed.
+  `handler` is wrapped in its own interceptor and added to the end of the interceptor
+   chain, so that, in the end, only a chain is registered.
+   Special effects and coeffects interceptors are added to the front of the
+   interceptor chain.  These interceptors inject the value of app-db into coeffects,
+   and, later, action effects."
+  ([handler]
+   (make-event-fx nil handler))
+  ([interceptors handler]
+   (events/make [cofx/inject-db fx/do-fx interceptors (fx-handler->interceptor handler)])))
 
-(defn reg-event-ctx
+(defmacro def-event-fx [var-name docstring interceptors arg-list & body]
+  (let [impl-fn-name (symbol (str (name var-name) "--impl"))
+        impl-fn-docs (str "Implementation of cofx-updating portion of `"
+                          (name var-name)
+                          "` event handler/interceptor chain."
+                          (if (and (string? docstring) (not (string/blank? docstring)))
+                            (str "  " (name var-name) "'s docstring:"
+                                 (string/join
+                                  "\n"
+                                  (map (fn [s] (str "  " s))
+                                       (string/split docstring #"\n"))))))]
+    `(do
+       (defn ~impl-fn-name ~impl-fn-docs ~arg-list ~@body)
+       (def ~var-name ~docstring (make-event-fx interceptors ~impl-fn-name)))))
+
+
+#_(defn reg-event-ctx
   "Register the given event `handler` (function) for the given `id`. Optionally, provide
   an `interceptors` chain.
   `id` is typically a namespaced keyword  (but can be anything)
@@ -113,7 +215,35 @@
   ([id interceptors handler]
    (events/register id [cofx/inject-db fx/do-fx interceptors (ctx-handler->interceptor handler)])))
 
-(def clear-event (partial registrar/clear-handlers events/kind)) ;; think unreg-event-*
+(defn make-event-ctx
+  "Register the given event `handler` (function) for the given `id`. Optionally, provide
+  an `interceptors` chain.
+  `id` is typically a namespaced keyword  (but can be anything)
+  `handler` is a function: (context-map event-vector) -> context-map
+
+  This form of registration is almost never used. "
+  ([handler]
+   (make-event-ctx nil handler))
+  ([interceptors handler]
+   (events/make [cofx/inject-db fx/do-fx interceptors (ctx-handler->interceptor handler)])))
+
+(defmacro def-event-ctx [var-name docstring interceptors arg-list & body]
+  (let [impl-fn-name (symbol (str (name var-name) "--impl"))
+        impl-fn-docs (str "Implementation of ctx-updating portion of `"
+                          (name var-name)
+                          "` event handler/interceptor chain."
+                          (if (and (string? docstring) (not (string/blank? docstring)))
+                            (str "  " (name var-name) "'s docstring:"
+                                 (string/join
+                                  "\n"
+                                  (map (fn [s] (str "  " s))
+                                       (string/split docstring #"\n"))))))]
+    `(do
+       (defn ~impl-fn-name ~impl-fn-docs ~arg-list ~@body)
+       (def ~var-name ~docstring (make-event-ctx interceptors ~impl-fn-name)))))
+
+;; no longer needed
+;; (def clear-event (partial registrar/clear-handlers events/kind)) ;; think unreg-event-*
 
 ;; -- interceptors ------------------------------------------------------------
 
@@ -173,7 +303,7 @@
   Checkpoint includes app-db, all registered handlers and all subscriptions.
   "
   []
-  (let [handlers @registrar/kind->id->handler
+  (let [;; handlers @registrar/kind->id->handler
         app-db   @db/app-db
 				subs-cache @subs/query->reaction]
     (fn []
@@ -187,7 +317,7 @@
       ;; Reset the atoms
       ;; We don't need to reset subs/query->reaction, as
       ;; disposing of the subs removes them from the cache anyway
-      (reset! registrar/kind->id->handler handlers)
+      ;; (reset! registrar/kind->id->handler handlers)
       (reset! db/app-db app-db)
       nil)))
 
@@ -224,14 +354,14 @@
   (router/remove-post-event-callback re-frame.router/event-queue id))
 
 
-;; --  Deprecation ------------------------------------------------------------
-;; Assisting the v0.7.x ->  v0.8.x transition.
-(defn register-handler
-  [& args]
-  (console :warn  "re-frame:  \"register-handler\" has been renamed \"reg-event-db\" (look for registration of" (str (first args)) ")")
-  (apply reg-event-db args))
+;; ;; --  Deprecation ------------------------------------------------------------
+;; ;; Assisting the v0.7.x ->  v0.8.x transition.
+;; (defn register-handler
+;;   [& args]
+;;   (console :warn  "re-frame:  \"register-handler\" has been renamed \"reg-event-db\" (look for registration of" (str (first args)) ")")
+;;   (apply reg-event-db args))
 
-(defn register-sub
-  [& args]
-  (console :warn  "re-frame:  \"register-sub\" is deprecated. Use \"reg-sub-raw\" (look for registration of" (str (first args)) ")")
-  (apply reg-sub-raw args))
+;; (defn register-sub
+;;   [& args]
+;;   (console :warn  "re-frame:  \"register-sub\" is deprecated. Use \"reg-sub-raw\" (look for registration of" (str (first args)) ")")
+;;   (apply reg-sub-raw args))
