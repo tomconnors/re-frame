@@ -1,4 +1,7 @@
 (ns re-frame.core
+  ;; Require this namespace's own macros so consumers of this lib don't need
+  ;; to use :require-macros/:include-macros
+  #?(:cljs (:require-macros [re-frame.core]))
   (:require
     [clojure.string            :as string]
     [re-frame.events           :as events]
